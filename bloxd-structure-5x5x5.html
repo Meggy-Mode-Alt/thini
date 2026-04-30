@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Parkour Module Editor</title>
+    <title>Schematic Editor</title>
     <style>
       body {
         background: #111;
@@ -396,31 +396,6 @@
         const code = `/* === Frames (sparse: only non-air cells) === */
 const frames = ${framesJSON};
 
-/* === Settings === */
-const startX = 20;
-const startY = 20;
-const startZ = 0;
-const frameSpacing = 5; /* distance between frames along Z */
-
-/* === Load schematic (places every frame in one pass) === */
-function loadSchematic() {
-    for (let f = 0; f < frames.length; f++) {
-        const blocks = frames[f].blocks;
-        const zOffset = f * frameSpacing;
-        for (let i = 0; i < blocks.length; i++) {
-            api.setBlock(
-                [
-                    startX + blocks[i][0],
-                    startY + blocks[i][1],
-                    startZ + blocks[i][2] + zOffset
-                ],
-                blocks[i][3]
-            );
-        }
-    }
-}
-
-loadSchematic();`;
 
         $("export-display").textContent = code;
       });
