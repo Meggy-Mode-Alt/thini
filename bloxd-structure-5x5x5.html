@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Parkour Module Editor</title>
+    <style>
+      body {
+        background: #111;
+        color: #fff;
+        font-family: sans-serif;
+        text-align: center;
+      }
+      canvas.layer {
+        border: 1px solid #555;
+        margin: 5px;
+        cursor: pointer;
+        display: inline-block;
+        background-color: #1a1a1a;
+      }
+      #export,
+      #copy-button,
+      #add-module,
+      #remove-module {
+        margin-top: 10px;
+        padding: 10px 20px;
+        cursor: pointer;
+        background: #444;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      #export:hover,
+      #copy-button:hover,
+      #add-module:hover,
+      #remove-module:hover {
+        background: #666;
+      }
+      .layer-container {
+        display: inline-block;
+        margin: 10px;
+      }
+      .layer-label {
+        margin-bottom: 5px;
+        font-size: 14px;
+        color: #aaa;
+      }
+      #export-display {
+        margin: 20px auto;
+        padding: 15px;
+        background: #000;
+        border: 1px solid #333;
+        border-radius: 5px;
+        width: 90%;
+        max-height: 400px;
+        overflow-y: auto;
+        text-align: left;
+        font-family: monospace;
+        white-space: pre;
+        font-size: 12px;
+      }
+      .palette {
+        margin: 10px 0;
+      }
+      .palette button {
+        margin: 0 4px;
+        padding: 6px 10px;
+        border: 2px solid #333;
+        border-radius: 4px;
+        cursor: pointer;
+        color: #fff;
+        font-size: 12px;
+      }
+      .palette button.active {
+        border-color: #fff;
+      }
+      #module-tabs {
+        margin: 10px 0;
+      }
+      #module-tabs button {
+        margin: 0 3px;
+        padding: 6px 12px;
+        background: #333;
+        color: #fff;
+        border: 1px solid #555;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #module-tabs button.active {
+        background: #666;
+        border-color: #fff;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div
+      id="controls"
+      style="
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #222;
+        display: inline-block;
+        border-radius: 8px;
+      "
+    >
+      <label
+        >X: <input type="number" id="inputX" value="5" style="width: 40px"
+      /></label>
+      <label
+        >Y: <input type="number" id="inputY" value="5" style="width: 40px"
+      /></label>
+      <label
+        >Z: <input type="number" id="inputZ" value="5" style="width: 40px"
+      /></label>
+      <button id="update-grid">Update Grid Size</button>
+      <br /><br />
+      <label
+        >Module Name:
+        <input
+          type="text"
+          id="moduleName"
+          value="module1"
+          style="width: 120px"
+      /></label>
+    </div>
+
+    <div id="module-tabs"></div>
+    <button id="add-module">+ Add Module</button>
+    <button id="remove-module">- Remove Current</button>
+
+    <div class="palette" id="palette"></div>
+    <div style="font-size: 12px; color: #888">
+      Hover a cell and press <b>0-9</b>, or click a palette block above and
+      click cells to paint.
+    </div>
+
+    <div id="layers"></div>
+
+    <br />
+    <button id="export">Generate Optimized Code</button>
+    <button id="copy-button">Copy to Clipboard</button>
+    <div id="export-display"></div>
+
+    <script>
+      let gridX = 5,
+        gridY = 5,
+        gridZ = 5;
+      const size = 30;
+
+      const blockTypes = [
+        "Air",
+        "Red Concrete",
+        "Orange Concrete",
+        "Yellow Concrete",
+        "Jungle Grass Block",
+      ];
+      const blockColors = {
+        Air: "#111",
+        "Red Concrete": "#B02E26",
+        "Orange Concrete": "#D97614",
+        "Yellow Concrete": "#FFD131",
+        "Jungle Grass Block": "#4e7a27",
+      };
+
+      // All modules live here. Each entry: { name, layers: [y][z][x] }
+      const modules = [];
+      let activeModule = 0;
+      let activeBlock = 1; // currently selected palette block
+      let hovered = { layer: -1, x: -1, z: -1 };
+
+      const $ = (id) => document.getElementById(id);
+
+      function makeEmptyModule(name) {
+        const layers = [];
+        for (let y = 0; y < gridY; y++) {
+          const layer = [];
+          for (let z = 0; z < gridZ; z++) {
+            layer.push(new Array(gridX).fill(0));
+          }
+          layers.push(layer);
+        }
+        return { name, layers };
+      }
+
+      function ensureModule() {
+        if (modules.length === 0) {
+          modules.push(makeEmptyModule($("moduleName").value || "module1"));
+          activeModule = 0;
+        }
+      }
+
+      function currentModule() {
+        ensureModule();
+        return modules[activeModule];
+      }
+
+      function resizeAllModules() {
+        for (const m of modules) {
+          const newLayers = [];
+          for (let y = 0; y < gridY; y++) {
+            const layer = [];
+            for (let z = 0; z < gridZ; z++) {
+              const row = new Array(gridX).fill(0);
+              if (m.layers[y] && m.layers[y][z]) {
+                for (let x = 0; x < gridX; x++) {
+                  row[x] = m.layers[y][z][x] || 0;
+                }
+              }
+              layer.push(row);
+            }
+            newLayers.push(layer);
+          }
+          m.layers = newLayers;
+        }
+      }
+
+      function initEditor() {
+        gridX = parseInt($("inputX").value) || 5;
+        gridY = parseInt($("inputY").value) || 5;
+        gridZ = parseInt($("inputZ").value) || 5;
+        ensureModule();
+        resizeAllModules();
+        renderTabs();
+        renderPalette();
+        renderLayers();
+      }
+
+      function renderTabs() {
+        const host = $("module-tabs");
+        host.innerHTML = "";
+        modules.forEach((m, i) => {
+          const b = document.createElement("button");
+          b.textContent = m.name;
+          if (i === activeModule) b.classList.add("active");
+          b.addEventListener("click", () => {
+            activeModule = i;
+            $("moduleName").value = m.name;
+            renderTabs();
+            renderLayers();
+          });
+          host.appendChild(b);
+        });
+      }
+
+      function renderPalette() {
+        const host = $("palette");
+        host.innerHTML = "";
+        blockTypes.forEach((name, id) => {
+          const b = document.createElement("button");
+          b.textContent = `${id}: ${name}`;
+          b.style.background = blockColors[name];
+          b.style.color = id === 3 ? "#000" : "#fff";
+          if (id === activeBlock) b.classList.add("active");
+          b.addEventListener("click", () => {
+            activeBlock = id;
+            renderPalette();
+          });
+          host.appendChild(b);
+        });
+      }
+
+      function renderLayers() {
+        const host = $("layers");
+        host.innerHTML = "";
+        const m = currentModule();
+        for (let y = 0; y < gridY; y++) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "layer-container";
+          wrapper.innerHTML = `<div class="layer-label">Y=${y}</div><canvas id="layer${y}" width="${gridX * size}" height="${gridZ * size}" class="layer"></canvas>`;
+          host.appendChild(wrapper);
+
+          const canvas = $(`layer${y}`);
+          canvas.addEventListener("mousemove", (e) => handleHover(e, y));
+          canvas.addEventListener("mouseleave", () => {
+            hovered = { layer: -1, x: -1, z: -1 };
+            drawLayer(y);
+          });
+          canvas.addEventListener("click", (e) => handleClick(e, y));
+          drawLayer(y);
+        }
+      }
+
+      function drawLayer(layerIndex) {
+        const canvas = $(`layer${layerIndex}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const layerData = currentModule().layers[layerIndex];
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let z = 0; z < gridZ; z++) {
+          for (let x = 0; x < gridX; x++) {
+            ctx.fillStyle = blockColors[blockTypes[layerData[z][x]]] || "#fff";
+            ctx.fillRect(x * size, z * size, size, size);
+            ctx.strokeStyle = "#333";
+            ctx.strokeRect(x * size, z * size, size, size);
+          }
+        }
+
+        if (hovered.layer === layerIndex) {
+          ctx.strokeStyle = "#FFFF00";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(hovered.x * size, hovered.z * size, size, size);
+        }
+      }
+
+      function handleHover(e, layerIndex) {
+        const rect = e.target.getBoundingClientRect();
+        hovered = {
+          layer: layerIndex,
+          x: Math.floor((e.clientX - rect.left) / size),
+          z: Math.floor((e.clientY - rect.top) / size),
+        };
+        drawLayer(layerIndex);
+      }
+
+      function handleClick(e, layerIndex) {
+        const rect = e.target.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / size);
+        const z = Math.floor((e.clientY - rect.top) / size);
+        if (x < 0 || x >= gridX || z < 0 || z >= gridZ) return;
+        currentModule().layers[layerIndex][z][x] = activeBlock;
+        drawLayer(layerIndex);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (hovered.layer < 0) return;
+        if (e.key >= "0" && e.key < blockTypes.length.toString()) {
+          currentModule().layers[hovered.layer][hovered.z][hovered.x] =
+            parseInt(e.key);
+          drawLayer(hovered.layer);
+        }
+      });
+
+      $("update-grid").addEventListener("click", initEditor);
+
+      $("moduleName").addEventListener("input", () => {
+        currentModule().name = $("moduleName").value || "module";
+        renderTabs();
+      });
+
+      $("add-module").addEventListener("click", () => {
+        const baseName = $("moduleName").value || "module";
+        const newName = `${baseName.replace(/\d+$/, "")}${modules.length + 1}`;
+        modules.push(makeEmptyModule(newName));
+        activeModule = modules.length - 1;
+        $("moduleName").value = newName;
+        renderTabs();
+        renderLayers();
+      });
+
+      $("remove-module").addEventListener("click", () => {
+        if (modules.length <= 1) return;
+        modules.splice(activeModule, 1);
+        activeModule = Math.max(0, activeModule - 1);
+        $("moduleName").value = modules[activeModule].name;
+        renderTabs();
+        renderLayers();
+      });
+
+      $("copy-button").addEventListener("click", () => {
+        navigator.clipboard.writeText($("export-display").textContent);
+        alert("Code copied!");
+      });
+
+      // === Export in the OPTIMIZED sparse format ===
+      // Each module becomes a list of [dx, dy, dz, "Block Name"] entries
+      // for only the non-air cells. This is what the optimized runtime
+      // script consumes directly.
+      $("export").addEventListener("click", () => {
+        const out = modules.map((m) => {
+          const blocks = [];
+          for (let y = 0; y < m.layers.length; y++) {
+            const layer = m.layers[y];
+            for (let z = 0; z < layer.length; z++) {
+              const row = layer[z];
+              for (let x = 0; x < row.length; x++) {
+                const id = row[x];
+                if (!id) continue; // skip Air (0)
+                blocks.push([x, y, z, blockTypes[id]]);
+              }
+            }
+          }
+          return { name: m.name, blocks };
+        });
+
+        const framesJSON =
+          "[\n" +
+          out
+            .map(
+              (m) =>
+                `    {\n        name: ${JSON.stringify(m.name)},\n        blocks: ${JSON.stringify(m.blocks)}\n    }`,
+            )
+            .join(",\n") +
+          "\n]";
+
+        const code = `/* === Frames (sparse: only non-air cells) === */
+const frames = ${framesJSON};
+
+/* === Settings === */
+const startX = 20;
+const startY = 20;
+const startZ = 0;
+const frameSpacing = 5; /* distance between frames along Z */
+
+/* === Load schematic (places every frame in one pass) === */
+function loadSchematic() {
+    for (let f = 0; f < frames.length; f++) {
+        const blocks = frames[f].blocks;
+        const zOffset = f * frameSpacing;
+        for (let i = 0; i < blocks.length; i++) {
+            api.setBlock(
+                [
+                    startX + blocks[i][0],
+                    startY + blocks[i][1],
+                    startZ + blocks[i][2] + zOffset
+                ],
+                blocks[i][3]
+            );
+        }
+    }
+}
+
+loadSchematic();`;
+
+        $("export-display").textContent = code;
+      });
+
+      initEditor();
+    </script>
+  </body>
+</html>
