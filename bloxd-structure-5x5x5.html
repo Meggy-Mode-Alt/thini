@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Parkour Module Editor</title>
+    <style>
+      body {
+        background: #111;
+        color: #fff;
+        font-family: sans-serif;
+        text-align: center;
+      }
+      canvas.layer {
+        border: 1px solid #555;
+        margin: 5px;
+        cursor: pointer;
+        display: inline-block;
+        background-color: #1a1a1a;
+      }
+      #export,
+      #copy-button {
+        margin-top: 20px;
+        padding: 10px 20px;
+        cursor: pointer;
+        background: #444;
+        color: white;
+        border: none;
+        border-radius: 4px;
+      }
+      #export:hover {
+        background: #666;
+      }
+      .layer-container {
+        display: inline-block;
+        margin: 10px;
+      }
+      .layer-label {
+        margin-bottom: 5px;
+        font-size: 14px;
+        color: #aaa;
+      }
+      #expot-display {
+        margin: 20px auto;
+        padding: 15px;
+        background: #000;
+        border: 1px solid #333;
+        border-radius: 5px;
+        width: 90%;
+        max-height: 400px;
+        overflow-y: auto;
+        text-align: left;
+        font-family: monospace;
+        white-space: pre;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div
+      id="controls"
+      style="
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #222;
+        display: inline-block;
+        border-radius: 8px;
+      "
+    >
+      <label
+        >X: <input type="number" id="inputX" value="5" style="width: 40px"
+      /></label>
+      <label
+        >Y: <input type="number" id="inputY" value="5" style="width: 40px"
+      /></label>
+      <label
+        >Z: <input type="number" id="inputZ" value="5" style="width: 40px"
+      /></label>
+      <button id="update-grid">Update Grid Size</button>
+      <br /><br />
+      <label
+        >Module Name:
+        <input type="text" id="moduleName" value="module1" style="width: 120px"
+      /></label>
+    </div>
+
+    <div id="layers"></div>
+
+    <br />
+    <button id="export">Generate Full Code Snippet</button>
+    <button id="copy-button">Copy to Clipboard</button>
+    <div id="expot-display"></div>
+
+    <script>
+      let gridX = 5,
+        gridY = 5,
+        gridZ = 5;
+      const size = 30;
+
+      // Matches your game script's block map
+      const blockTypes = [
+        "Air",
+        "Red Concrete",
+        "Orange Concrete",
+        "Yellow Concrete",
+        "Jungle Grass Block",
+      ];
+      const blockColors = {
+        Air: "#111",
+        "Red Concrete": "#B02E26",
+        "Orange Concrete": "#D97614",
+        "Yellow Concrete": "#FFD131",
+        "Jungle Grass Block": "#4e7a27",
+      };
+
+      let module3D = [];
+      let hovered = { layer: -1, x: -1, z: -1 };
+
+      const initEditor = () => {
+        gridX = parseInt(document.getElementById("inputX").value) || 5;
+        gridY = parseInt(document.getElementById("inputY").value) || 5;
+        gridZ = parseInt(document.getElementById("inputZ").value) || 5;
+        document.getElementById("layers").innerHTML = "";
+        module3D = [];
+
+        for (let y = 0; y < gridY; y++) {
+          let layer = [];
+          for (let z = 0; z < gridZ; z++) {
+            layer.push(new Array(gridX).fill(0));
+          }
+          module3D.push(layer);
+
+          const wrapper = document.createElement("div");
+          wrapper.className = "layer-container";
+          wrapper.innerHTML = `<div class="layer-label">Y=${y}</div><canvas id="layer${y}" width="${gridX * size}" height="${gridZ * size}" class="layer"></canvas>`;
+          document.getElementById("layers").appendChild(wrapper);
+
+          const canvas = document.getElementById(`layer${y}`);
+          canvas.addEventListener("mousemove", (e) => handleHover(e, y));
+          canvas.addEventListener("mouseleave", () => {
+            hovered = { layer: -1, x: -1, z: -1 };
+            drawLayer(y);
+          });
+          drawLayer(y);
+        }
+      };
+
+      function drawLayer(layerIndex) {
+        const canvas = document.getElementById(`layer${layerIndex}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const layerData = module3D[layerIndex];
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (let z = 0; z < gridZ; z++) {
+          for (let x = 0; x < gridX; x++) {
+            ctx.fillStyle = blockColors[blockTypes[layerData[z][x]]] || "#fff";
+            ctx.fillRect(x * size, z * size, size, size);
+            ctx.strokeStyle = "#333";
+            ctx.strokeRect(x * size, z * size, size, size);
+          }
+        }
+
+        if (hovered.layer === layerIndex) {
+          ctx.strokeStyle = "#FFFF00";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(hovered.x * size, hovered.z * size, size, size);
+        }
+      }
+
+      function handleHover(e, layerIndex) {
+        const rect = e.target.getBoundingClientRect();
+        hovered = {
+          layer: layerIndex,
+          x: Math.floor((e.clientX - rect.left) / size),
+          z: Math.floor((e.clientY - rect.top) / size),
+        };
+        drawLayer(layerIndex);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (hovered.layer < 0) return;
+        if (e.key >= "0" && e.key < blockTypes.length.toString()) {
+          module3D[hovered.layer][hovered.z][hovered.x] = parseInt(e.key);
+          drawLayer(hovered.layer);
+        }
+      });
+
+      document
+        .getElementById("update-grid")
+        .addEventListener("click", initEditor);
+      document.getElementById("copy-button").addEventListener("click", () => {
+        navigator.clipboard.writeText(
+          document.getElementById("expot-display").textContent,
+        );
+        alert("Code copied!");
+      });
+
+      document.getElementById("export").addEventListener("click", () => {
+        const name = document.getElementById("moduleName").value || "module1";
+        const layersJSON = JSON.stringify(module3D);
+
+        const output = `// === Block map ===
+const blockMap = {
+    0: "Air",
+    1: "Red Concrete",
+    2: "Orange Concrete",
+    3: "Yellow Concrete",
+    4: "Jungle Grass Block"
+};
+
+// === Frames ===
+const frames = [
+    {
+        name: "${name}",
+        layers: ${layersJSON}
+    }
+];`;
+        document.getElementById("expot-display").textContent = output;
+      });
+
+      initEditor();
+    </script>
+  </body>
+</html>
