@@ -13,9 +13,10 @@
       canvas.layer {
         border: 1px solid #555;
         margin: 5px;
-        cursor: pointer;
+        cursor: crosshair;
         display: inline-block;
         background-color: #1a1a1a;
+        user-select: none;
       }
       #export,
       #copy-button,
@@ -103,25 +104,12 @@
         border-radius: 8px;
       "
     >
-      <label
-        >X: <input type="number" id="inputX" value="5" style="width: 40px"
-      /></label>
-      <label
-        >Y: <input type="number" id="inputY" value="5" style="width: 40px"
-      /></label>
-      <label
-        >Z: <input type="number" id="inputZ" value="5" style="width: 40px"
-      /></label>
+      <label>X: <input type="number" id="inputX" value="5" style="width: 40px" /></label>
+      <label>Y: <input type="number" id="inputY" value="5" style="width: 40px" /></label>
+      <label>Z: <input type="number" id="inputZ" value="5" style="width: 40px" /></label>
       <button id="update-grid">Update Grid Size</button>
       <br /><br />
-      <label
-        >Module Name:
-        <input
-          type="text"
-          id="moduleName"
-          value="module1"
-          style="width: 120px"
-      /></label>
+      <label>Module Name: <input type="text" id="moduleName" value="module1" style="width: 120px" /></label>
     </div>
 
     <div id="module-tabs"></div>
@@ -130,8 +118,7 @@
 
     <div class="palette" id="palette"></div>
     <div style="font-size: 12px; color: #888">
-      Hover a cell and press <b>0-9</b>, or click a palette block above and
-      click cells to paint.
+      Click or click-and-drag to paint. Hover a cell and press <b>0-9</b> to set block type.
     </div>
 
     <div id="layers"></div>
@@ -142,9 +129,7 @@
     <div id="export-display"></div>
 
     <script>
-      let gridX = 5,
-        gridY = 5,
-        gridZ = 5;
+      let gridX = 5, gridY = 5, gridZ = 5;
       const size = 30;
 
       const blockTypes = [
@@ -162,11 +147,11 @@
         "Jungle Grass Block": "#4e7a27",
       };
 
-      // All modules live here. Each entry: { name, layers: [y][z][x] }
       const modules = [];
       let activeModule = 0;
-      let activeBlock = 1; // currently selected palette block
+      let activeBlock = 1;
       let hovered = { layer: -1, x: -1, z: -1 };
+      let isDrawing = false;
 
       const $ = (id) => document.getElementById(id);
 
@@ -259,6 +244,20 @@
         });
       }
 
+      function getCellFromEvent(e) {
+        const rect = e.target.getBoundingClientRect();
+        return {
+          x: Math.floor((e.clientX - rect.left) / size),
+          z: Math.floor((e.clientY - rect.top) / size),
+        };
+      }
+
+      function paintCell(layerIndex, x, z) {
+        if (x < 0 || x >= gridX || z < 0 || z >= gridZ) return;
+        currentModule().layers[layerIndex][z][x] = activeBlock;
+        drawLayer(layerIndex);
+      }
+
       function renderLayers() {
         const host = $("layers");
         host.innerHTML = "";
@@ -270,15 +269,36 @@
           host.appendChild(wrapper);
 
           const canvas = $(`layer${y}`);
-          canvas.addEventListener("mousemove", (e) => handleHover(e, y));
+
+          canvas.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            isDrawing = true;
+            const { x, z } = getCellFromEvent(e);
+            paintCell(y, x, z);
+          });
+
+          canvas.addEventListener("mousemove", (e) => {
+            const { x, z } = getCellFromEvent(e);
+            hovered = { layer: y, x, z };
+            if (isDrawing) {
+              paintCell(y, x, z);
+            } else {
+              drawLayer(y);
+            }
+          });
+
           canvas.addEventListener("mouseleave", () => {
             hovered = { layer: -1, x: -1, z: -1 };
             drawLayer(y);
           });
-          canvas.addEventListener("click", (e) => handleClick(e, y));
+
           drawLayer(y);
         }
       }
+
+      document.addEventListener("mouseup", () => {
+        isDrawing = false;
+      });
 
       function drawLayer(layerIndex) {
         const canvas = $(`layer${layerIndex}`);
@@ -292,6 +312,7 @@
             ctx.fillStyle = blockColors[blockTypes[layerData[z][x]]] || "#fff";
             ctx.fillRect(x * size, z * size, size, size);
             ctx.strokeStyle = "#333";
+            ctx.lineWidth = 1;
             ctx.strokeRect(x * size, z * size, size, size);
           }
         }
@@ -303,30 +324,10 @@
         }
       }
 
-      function handleHover(e, layerIndex) {
-        const rect = e.target.getBoundingClientRect();
-        hovered = {
-          layer: layerIndex,
-          x: Math.floor((e.clientX - rect.left) / size),
-          z: Math.floor((e.clientY - rect.top) / size),
-        };
-        drawLayer(layerIndex);
-      }
-
-      function handleClick(e, layerIndex) {
-        const rect = e.target.getBoundingClientRect();
-        const x = Math.floor((e.clientX - rect.left) / size);
-        const z = Math.floor((e.clientY - rect.top) / size);
-        if (x < 0 || x >= gridX || z < 0 || z >= gridZ) return;
-        currentModule().layers[layerIndex][z][x] = activeBlock;
-        drawLayer(layerIndex);
-      }
-
       document.addEventListener("keydown", (e) => {
         if (hovered.layer < 0) return;
         if (e.key >= "0" && e.key < blockTypes.length.toString()) {
-          currentModule().layers[hovered.layer][hovered.z][hovered.x] =
-            parseInt(e.key);
+          currentModule().layers[hovered.layer][hovered.z][hovered.x] = parseInt(e.key);
           drawLayer(hovered.layer);
         }
       });
@@ -358,14 +359,37 @@
       });
 
       $("copy-button").addEventListener("click", () => {
-        navigator.clipboard.writeText($("export-display").textContent);
-        alert("Code copied!");
+        const text = $("export-display").textContent;
+        if (!text.trim()) {
+          alert("Nothing to copy — click 'Generate Optimized Code' first.");
+          return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            alert("Code copied!");
+          }).catch(() => fallbackCopy(text));
+        } else {
+          fallbackCopy(text);
+        }
       });
 
-      // === Export in the OPTIMIZED sparse format ===
-      // Each module becomes a list of [dx, dy, dz, "Block Name"] entries
-      // for only the non-air cells. This is what the optimized runtime
-      // script consumes directly.
+      function fallbackCopy(text) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try {
+          document.execCommand("copy");
+          alert("Code copied!");
+        } catch (err) {
+          alert("Copy failed. Please select the text manually.");
+        }
+        document.body.removeChild(ta);
+      }
+
       $("export").addEventListener("click", () => {
         const out = modules.map((m) => {
           const blocks = [];
@@ -375,7 +399,7 @@
               const row = layer[z];
               for (let x = 0; x < row.length; x++) {
                 const id = row[x];
-                if (!id) continue; // skip Air (0)
+                if (!id) continue;
                 blocks.push([x, y, z, blockTypes[id]]);
               }
             }
@@ -393,9 +417,7 @@
             .join(",\n") +
           "\n]";
 
-        const code = `/* === Frames (sparse: only non-air cells) === */
-const frames = ${framesJSON};`;
-
+        const code = `const frames = ${framesJSON};`;
         $("export-display").textContent = code;
       });
 
